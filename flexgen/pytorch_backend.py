@@ -369,7 +369,7 @@ class TorchDevice:
                 attn_sparsity, compress_cache, comp_config):
         """Multi-head attention (decoding phase)."""
         # decompress weights
-        if w_q.device.device_type == DeviceType.COMPRESSED:
+        if w_q.device.device_type == DeviceType.COMPRESSED: #! int4 -> fp16(weight)
             w_q = w_q.device.decompress(w_q)
             w_k = w_k.device.decompress(w_k)
             w_v = w_v.device.decompress(w_v)
@@ -402,7 +402,7 @@ class TorchDevice:
             if attn_sparsity >= 1.0:  # Dense attention
                 if compress_cache:
                     # shape: (s, b * n_head, head_dim)
-                    k = k_cache.device.decompress(k_cache)[:src_s]
+                    k = k_cache.device.decompress(k_cache)[:src_s] #! int4 -> fp16(cache)
                     v = v_cache.device.decompress(v_cache)[:src_s]
                 else:
                     # shape: (s, b * n_head, head_dim)
@@ -416,7 +416,7 @@ class TorchDevice:
                 # shape: (b * n_head, s, head_dim)
                 v = v.permute(1, 0, 2).reshape(b * n_head, src_s, head_dim)
 
-                if k.is_cuda:
+                if k.is_cuda: #! q,k,v之类如果都在GPU上最好，否则q会转到CPU上，而不是把k,v转到GPU上
                     value = self._attention_value(q, k, v, attention_mask.data,
                         b, src_s, tgt_s, n_head, head_dim)
                 else:
@@ -424,7 +424,7 @@ class TorchDevice:
                     k, v = k.float(), v.float()
                     value = self._attention_value(q, k, v, attention_mask.data,
                         b, src_s, tgt_s, n_head, head_dim).cuda().half()
-            else:  # Sparse attention
+            else:  # Sparse attention #! default do not use sparse attention!
                 # shape: (s, b * n_head, head_dim)
                 k = k_cache.data[:src_s]
                 k[src_s - 1:src_s] = k_new
@@ -441,7 +441,7 @@ class TorchDevice:
                         attention_mask.data, b, src_s, tgt_s, n_head, head_dim,
                         attn_sparsity).cuda().half()
         else:  # Mixed device attention
-            assert attn_sparsity >= 1.0
+            assert attn_sparsity >= 1.0 #! 如果是mixed device attention，则不能使用sparse attention
             value = self._mixed_device_attention(q, k_cache, v_cache,
                 k_new, v_new, attention_mask.data, b, src_s, tgt_s,
                 n_head, head_dim)
@@ -521,7 +521,7 @@ class TorchDevice:
         return torch.bmm(attn_weights, v).view(b, n_head, tgt_s, head_dim)
 
     def _mixed_device_attention(self, q, k_cache, v_cache, k_new, v_new,
-            mask, b, src_s, tgt_s, n_head, head_dim):
+            mask, b, src_s, tgt_s, n_head, head_dim): #! 不支持量化和稀疏
         # The caches are stored on both gpu and cpu.
         # Compute attention on gpu for caches stored on gpu.
         # Compute attention on cpu for caches stored on cpu.

@@ -29,7 +29,7 @@ class TorchCompressedDevice:
         self.data_decompress_workspace = None
         self.workspace_pt = 0
 
-    def allocate(self, shape, dtype, comp_config, pin_memory=None, name=None):
+    def allocate(self, shape, dtype, comp_config, pin_memory=None, name=None): #! 量化
         """Allocate a compressed TorchTensor. Round up the shape to group boundary."""
         assert comp_config.num_bits == 4 and dtype == np.float16
 

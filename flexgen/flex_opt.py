@@ -79,13 +79,13 @@ class Policy:
         return 100 - self.act_gpu_percent - self.act_cpu_percent
 
 
-def get_choice(cur_percent, percents, choices):
+def get_choice(cur_percent, percents, choices): #! choice有3个值：disk，cpu，gpu
     percents = np.cumsum(percents)
     assert np.abs(percents[-1] - 100) < 1e-5
 
     for i in range(len(percents)):
         if cur_percent < percents[i]:
-            return choices[i]
+            return choices[i] #! 权重根据自己的大小所在的百分比位置简单地按照顺序存储在disk，cpu，gpu中，这个顺序是写死的
     return choices[-1]
 
 
@@ -93,13 +93,13 @@ def init_weight_list(weight_specs, policy, env):
     dev_percents = [policy.w_disk_percent, policy.w_cpu_percent, policy.w_gpu_percent]
     dev_choices = [env.disk, env.cpu, env.gpu]
 
-    sizes = [np.prod(spec[0]) for spec in weight_specs]
-    sizes_cumsum = np.cumsum(sizes)
+    sizes = [np.prod(spec[0]) for spec in weight_specs] #! 尺寸
+    sizes_cumsum = np.cumsum(sizes) #! 累计尺寸
     ret = []
     for i in range(len(weight_specs)):
-        mid_percent = (sizes_cumsum[i] - sizes[i] / 2) / sizes_cumsum[-1]
+        mid_percent = (sizes_cumsum[i] - sizes[i] / 2) / sizes_cumsum[-1] #! [0.4, 0.5, 0.1] -> [0.2, 0.65, 0.95]
         home = get_choice(mid_percent * 100, dev_percents, dev_choices)
-        shape, dtype, filename = weight_specs[i]
+        shape, dtype, filename = weight_specs[i] #! 调度目标设备的代码
 
         if len(shape) < 2:
             pin_memory = True
@@ -225,7 +225,7 @@ class OutputEmbed:
 
         weight_home.store(weights)
 
-    def load_weight(self, weight_home, weight_read_buf, k):
+    def load_weight(self, weight_home, weight_read_buf, k): #! when k>0, do not need to load weight
         w_ln, b_ln, w_token = weight_home.val
         if k == 0:
             dst1 = self.weight_load_dst
@@ -329,7 +329,7 @@ class SelfAttention:
             device = self.env.mixed
 
         if self.policy.compress_cache:
-            assert device.device_type != DeviceType.MIXED
+            assert device.device_type != DeviceType.MIXED #! 如果想要压缩cache，那么cache必须在同一个设备上
             device = device.compressed_device
 
         cache = device.init_cache_one_gpu_batch(self.config, self.task, self.policy)
@@ -648,7 +648,7 @@ class OptLM:
         if not os.path.exists(check_path) and DUMMY_WEIGHT not in check_path:
             download_opt_weights(self.config.name, self.path)
 
-        self.layers[j].init_weight(self.weight_home[j], expanded_path)
+        self.layers[j].init_weight(self.weight_home[j], expanded_path) #! 这里的layer分为4种：InputEmbed，selfAttention，MLP，OutputEmbed。每个层有什么（weight，bias），直接看weight_specs
 
     def load_weight(self, i, j, k, overlap=True):
         # Handle corner cases
@@ -697,7 +697,7 @@ class OptLM:
         else:
             self.layers[j].load_cache(self.cache_home[j][k], self.cache_read_buf[j][k], i)
 
-    def store_cache(self, i, j, k, overlap=True):
+    def store_cache(self, i, j, k, overlap=True): #! notice the case -1
         # Handle corner cases
         if k == -1:
             k = self.num_gpu_batches - 1
@@ -781,7 +781,7 @@ class OptLM:
             if x.val:  # x may already be moved due to overlapping
                 x.val = x.val.move(self.act_home)
 
-    def compute_layer(self, i, j, k):
+    def compute_layer(self, i, j, k): #! core coda to compute
         # Update the hidden in place
         # Clear the weight_read_buf if it is the last gpu batch
         # Clear the cache_read_buf
@@ -849,16 +849,16 @@ class OptLM:
 
         # Output token ids
         self.output_ids = np.full((len(task.inputs), prompt_len + gen_len),
-            self.config.pad_token_id, dtype=np.int32)
+            self.config.pad_token_id, dtype=np.int32) #! 
         self.stopped = np.zeros((len(task.inputs), 1), dtype=bool)
-        self.output_ids[:, :prompt_len] = np.asarray(task.inputs)
+        self.output_ids[:, :prompt_len] = np.asarray(task.inputs) #! 在总长为prompt_len + gen_len的句子中，被补全的gen_len全部被填充为1 `pad_token_id`
         assert gpu_batch_size * num_gpu_batches == len(task.inputs)
 
         # Intermediate tensors
         # The following buffers store values used
         # for the i-th token, j-th layer, k-th gpu batch.
-        num_layers, num_gpu_batches = self.num_layers, self.policy.num_gpu_batches
-        for j in range(num_layers):
+        num_layers, num_gpu_batches = self.num_layers, self.policy.num_gpu_batches #! opt1.3: 1,50
+        for j in range(num_layers): #! figure 4: block schedule with overlapping
             for k in range(num_gpu_batches):
                 self.cache_home[j][k].clear()
                 self.cache_read_buf[j][k].clear()
@@ -884,7 +884,7 @@ class OptLM:
                 self.generation_loop_normal()
             else:
                 # Overlap I/O and compute
-                if num_gpu_batches == 1:
+                if num_gpu_batches == 1: #! play differently for different batch size
                     self.generation_loop_overlap_single_batch()
                 else:
                     self.generation_loop_overlap_multi_batch()

@@ -9,7 +9,7 @@ from flexgen.flex_opt import (Policy, OptLM, ExecutionEnv, CompressionConfig,
 
 def main(args):
     # Initialize environment
-    env = ExecutionEnv.create(args.offload_dir)
+    env = ExecutionEnv.create(args.offload_dir) #! 管理三种设备对于tensor的分配
 
     # Offloading policy
     policy = Policy(1, 1,
@@ -37,10 +37,6 @@ def main(args):
 
     context = (
         "A chat between a curious human and a knowledgeable artificial intelligence assistant.\n"
-        "Human: Hello! What can you do?\n"
-        "Assistant: As an AI assistant, I can answer questions and chat with you.\n"
-        "Human: What is the name of the tallest mountain in the world?\n"
-        "Assistant: Everest.\n"
     )
 
     # Chat
@@ -57,8 +53,8 @@ def main(args):
         output_ids = model.generate(
             inputs.input_ids,
             do_sample=True,
-            temperature=0.7,
-            max_new_tokens=96,
+            temperature=0.7, #! https://stackoverflow.com/questions/58764619/why-should-we-use-temperature-in-softmax/63471046
+            max_new_tokens=96, #! 这个应该是min(实际上限, 设定上限)
             stop=stop)
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
         try:
